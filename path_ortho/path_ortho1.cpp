@@ -27,7 +27,7 @@ Project homepage:
 https://github.com/OverQuantum/path_ortho
 
 
-
+OverQuantum, 2013.03.16 - 2013.03.18
 
 History
 2013.03.13 idea
@@ -36,6 +36,7 @@ History
 2013.03.17 working
 2013.03.17 SVG path-d syntax removed
 2013.03.17 works fine, RC1
+2013.03.18 fix i32 for gcc, abs->fabs, RC2
 
 TODO:
 - handle unclosed paths
@@ -57,7 +58,12 @@ TODO:
 #include <math.h>
 
 typedef double _float;
-typedef __int32 i32;
+#ifdef _MSC_VER
+typedef __int32 i32;  //For MSVC
+#else
+#include <stdint.h>
+typedef int32_t i32;  //For gcc
+#endif
 
 //class for storing path
 class Path
@@ -162,7 +168,7 @@ i32 OrthogonalizePath(Path *dest, Path *src, _float collapseLen)
         xbase+=x2;//data goes into 1st base vector
         ybase+=y2;
         
-        if (x1>abs(y1))
+        if (x1>fabs(y1))
 		{
             x4=x1;y4=y2; //in range (-45;45) degr
 		}
@@ -244,8 +250,8 @@ i32 OrthogonalizePath(Path *dest, Path *src, _float collapseLen)
         x1 = src->x[i]-src->x[i-1];
         y1 = src->y[i]-src->y[i-1];
 
-        v2 = abs(x1*xbase+y1*ybase);//length of path vector along base vector
-        v4 = abs(x1*ybase-y1*xbase);//length of path vector perpendicular to base vector
+        v2 = fabs(x1*xbase+y1*ybase);//length of path vector along base vector
+        v4 = fabs(x1*ybase-y1*xbase);//length of path vector perpendicular to base vector
         if (v2>v4)
 			dir[i-1]=0;//path vector is along base vector
 		else
