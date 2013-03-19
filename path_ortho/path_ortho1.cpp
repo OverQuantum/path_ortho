@@ -27,7 +27,7 @@ Project homepage:
 https://github.com/OverQuantum/path_ortho
 
 
-OverQuantum, 2013.03.16 - 2013.03.18
+OverQuantum, 2013.03.16 - 2013.03.19
 
 History
 2013.03.13 idea
@@ -37,6 +37,10 @@ History
 2013.03.17 SVG path-d syntax removed
 2013.03.17 works fine, RC1
 2013.03.18 fix i32 for gcc, abs->fabs, RC2
+2013.03.19 fixed bug y1->y4
+2013.03.19 fixed bug on calc iend
+2013.03.19 fixed bug in changing dir on collapse
+2013.03.19 added limit to collapses, RC3
 
 TODO:
 - handle unclosed paths
@@ -120,6 +124,7 @@ i32 OrthogonalizePath(Path *dest, Path *src, _float collapseLen)
 	_float d,v2,v4,sumv2,sumv4;
 	i32 *dir;//flags of direction for all path vectors, 0 - along, 1 - perpendicular
 	i32 *dirgroup;//group of directions for result path
+	i32 collapses=0;
 
 	num = src->num;
 
@@ -170,7 +175,7 @@ i32 OrthogonalizePath(Path *dest, Path *src, _float collapseLen)
         
         if (x1>fabs(y1))
 		{
-            x4=x1;y4=y2; //in range (-45;45) degr
+            x4=x1;y4=y1; //in range (-45;45) degr
 		}
 		else
 		{
@@ -342,13 +347,13 @@ RecalcOrtho:
 	dest->y[num2]=dest->y[0];
 	dest->num = num2+1;
 
-	//check length of vector for collapsing 
-	if (collapseLen>0)
+	//check length of vector for collapsing, forget is 200 attempts made
+	if (collapseLen>0 && collapses<200)
 	{
 		_float clen2=collapseLen*collapseLen;//checking is on squares, to not waste time for square-root
 		i32 iend;
 		i32 flag=0;
-		//num2=dest->num;
+
 		for (i=1;i<dest->num;i++)
 		{
 			//path vector from one node to another
@@ -365,24 +370,31 @@ RecalcOrtho:
 
 				//end of dir-group, could be cycled
 				if (i==(dest->num-1))
-					iend=dirgroup[0];
+					iend=dirgroup[0]+num1;
 				else
 					iend=dirgroup[i];
 
 				//get dirprev from previous group for erasing this group
 				//simple reversing 1<->0 is not good, as two or more sequental vectors should be collapsed as a whole
 				if (istart==0)
-					dirprev=dir[src->num-2];//cycled
+					dirprev=dir[num1-1];//cycled
 				else
 					dirprev=dir[istart-1];
 				
-				for (j=istart;j<=iend;j++)
-					dir[j]=dirprev;//change dir of this group
-				flag=1;
+				//change dir of this group
+				for (j=istart;j<iend;j++)
+				{
+					if (dir[j%num1]!=dirprev)
+						flag=1;//if dir is really changed - remember this
+					dir[j%num1]=dirprev;
+				}
 			}
 		}
 		if (flag>0)
-			goto RecalcOrtho;//anything found - goto calc of C-params
+		{
+			collapses++;
+			goto RecalcOrtho;//anything changed - goto calc of C-params
+		}
 	}
 
 	//done, free arrays
