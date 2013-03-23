@@ -27,7 +27,7 @@ Project homepage:
 https://github.com/OverQuantum/path_ortho
 
 
-OverQuantum, 2013.03.16 - 2013.03.19
+OverQuantum, 2013.03.16 - 2013.03.23
 
 History
 2013.03.13 idea
@@ -41,14 +41,18 @@ History
 2013.03.19 fixed bug on calc iend
 2013.03.19 fixed bug in changing dir on collapse
 2013.03.19 added limit to collapses, RC3
+2013.03.20 added test support of unclosed paths, no regression yet
+2013.03.23 added no output of <5 nodes closed path
+ v1.01
 
 TODO:
-- handle unclosed paths
-- consider multiple paths
+- parameter to keep all points of lines
 - external base vector
-
-
-
+- consider multiple paths, ex:
+  - many lines, no points - ortho all lines with one base vector
+  - lines + 1 point - fix this point, ortho all other
+  - lines + 2 points - fix both points + use them as base vector (like JOSM)
+  - lines + 3+ points - ortho only points of these lines as sublines, other points remain fixed
 
 */
 
@@ -125,19 +129,28 @@ i32 OrthogonalizePath(Path *dest, Path *src, _float collapseLen)
 	i32 *dir;//flags of direction for all path vectors, 0 - along, 1 - perpendicular
 	i32 *dirgroup;//group of directions for result path
 	i32 collapses=0;
+	i32 closed=0;
 
 	num = src->num;
 
 	//check number of nodes and closing state
-	if (num<5)
-	{
-		printf("ERROR: closed path with less than 5 nodes will just collapse\n");
-		return 1;
-	}
 	if (src->x[0]!=src->x[num-1] || src->y[0]!=src->y[num-1])
 	{
-		printf("ERROR: path must be closed\n");
-		return 2;
+		if (num<3)
+		{
+			printf("ERROR: not closed path with less than 3 nodes\n");
+			return 3;
+		}
+		closed=0;
+	}
+	else
+	{
+		if (num<5)
+		{
+			printf("ERROR: closed path with less than 5 nodes will just collapse\n");
+			return 1;
+		}
+		closed=1;
 	}
 
 	//calculate two versions of base direction vector
@@ -269,62 +282,142 @@ RecalcOrtho:
 	//group is a sequental vectors having equal dir
 	//C-param is from line equation A*x+B*y = C, where (A,B) - vector perpendicular to line
     
-	num1 = num-1;//number of vectors in closed source path
-	istart=-1;//group not started
+	num1 = num-1;//number of vectors in source path
 	num2=0;//number of groups
-    dirprev=dir[num1-1];//first vector will be in group with last vectors in case of same dir
+	if (closed==1)
+	{	//closed path
+		istart=-1;//group not started
+		dirprev=dir[num1-1];//first vector will be in group with last vectors in case of same dir
 
-	for(i=0;i<num*2;i++)//we must cycle more than one time to group last vectors with first ones
-	{
-        if (dir[i%num1]!=dirprev) // %num1 is to handle more than one cycle
+		for(i=0;i<num*2;i++)//we must cycle more than one time to group last vectors with first ones
 		{
-			//dir has changed - group finished
-
-            if (istart>=0)
+			if (dir[i%num1]!=dirprev) // %num1 is to handle more than one cycle
 			{
-				c=0;
-                if (dirprev==0)
-				{
-                    //path vector along base vector, using (B,-A) - perpendicular to base vector
-                    for(j=istart;j<=i;j++)
-                        c+=src->x[j%num1]*ybase-src->y[j%num1]*xbase;
-				}
-                else
-				{
-                    //path vector perpendicular to base vector, using base vector (A,B)
-                    for(j=istart;j<=i;j++)
-                        c+=src->x[j%num1]*xbase+src->y[j%num1]*ybase;
-				}
-                c=c/(1.0+i-istart); //get average C-param of line
+				//dir has changed - group finished
 
-                if (dirprev==0)
+				if (istart>=0)
 				{
-                    dest->x[num2]=c; //x of dest path is used to store C-param of along-direction
-					dest->x[num2+1]=c;//next node also have same C-param
-				}
-				else
-				{
-                    dest->y[num2]=c; //y of dest path is used to store C-param of ortho-direction
-					dest->y[num2+1]=c;
-				}
-				dirgroup[num2]=istart;//keep group starting node
-                num2++;//group finished
-                if (i>=num1)
-				{
-					//we have cycled over 0 and so may finish
-
-					//store C-param of last group into first node
-                    if (dirprev==0)
-                        dest->x[0]=c;
+					c=0;
+					if (dirprev==0)
+					{
+						//path vector along base vector, using (B,-A) - perpendicular to base vector
+						for(j=istart;j<=i;j++)
+							c+=src->x[j%num1]*ybase-src->y[j%num1]*xbase;
+					}
 					else
-                        dest->y[0]=c;
+					{
+						//path vector perpendicular to base vector, using base vector (A,B)
+						for(j=istart;j<=i;j++)
+							c+=src->x[j%num1]*xbase+src->y[j%num1]*ybase;
+					}
+					c=c/(1.0+i-istart); //get average C-param of line
 
-                    break;//exit from for() loop
+					if (dirprev==0)
+					{
+						dest->x[num2]=c; //x of dest path is used to store C-param of along-direction
+						dest->x[num2+1]=c;//next node also have same C-param
+					}
+					else
+					{
+						dest->y[num2]=c; //y of dest path is used to store C-param of ortho-direction
+						dest->y[num2+1]=c;
+					}
+					dirgroup[num2]=istart;//keep group starting node
+					num2++;//group finished
+					if (i>=num1)
+					{
+						//we have cycled over 0 and so may finish
+
+						//store C-param of last group into first node
+						if (dirprev==0)
+							dest->x[0]=c;
+						else
+							dest->y[0]=c;
+
+						break;//exit from for() loop
+					}
 				}
+				dirprev = dir[i];//next group
+				istart = i;//group start node
 			}
-            dirprev = dir[i];//next group
-            istart = i;//group start node
 		}
+
+		//last node repeat first for closed path
+		dest->x[num2]=dest->x[0];
+		dest->y[num2]=dest->y[0];
+		num2++;
+	}
+	else
+	{
+		istart=0;//first group is from start
+		dirprev=dir[0];
+		dir[num1]=2;//finish for last group
+
+		for(i=1;i<num;i++)
+		{
+			if (dir[i]!=dirprev)
+			{
+				//dir has changed - group finished
+				if (istart>=0)
+				{
+					c=0;
+					if (dirprev==0)
+					{
+						//path vector along base vector, using (B,-A) - perpendicular to base vector
+						for(j=istart;j<=i;j++)
+							c+=src->x[j]*ybase-src->y[j]*xbase;
+					}
+					else
+					{
+						//path vector perpendicular to base vector, using base vector (A,B)
+						for(j=istart;j<=i;j++)
+							c+=src->x[j]*xbase+src->y[j]*ybase;
+					}
+					c=c/(1.0+i-istart); //get average C-param of line
+
+					if (dirprev==0)
+					{
+						dest->x[num2]=c; //x of dest path is used to store C-param of along-direction
+						dest->x[num2+1]=c;//next node also have same C-param
+					}
+					else
+					{
+						dest->y[num2]=c; //y of dest path is used to store C-param of ortho-direction
+						dest->y[num2+1]=c;
+					}
+					dirgroup[num2]=istart;//keep group starting node
+					num2++;//group finished
+				}
+				dirprev = dir[i];//next group
+				istart = i;//group start node
+			}
+		}
+
+		//calculate 2nd C-parameter for first node (on perpendicular dir to first group)
+		if (dir[0]==0)
+		{
+			//path vector along base vector
+			dest->y[0]=src->x[0]*xbase+src->y[0]*ybase;
+		}
+		else
+		{
+			//path vector perpendicular to base vector
+			dest->x[0]=src->x[0]*ybase-src->y[0]*xbase;
+		}
+
+		//calculate 2nd C-parameter for last node (on perpendicular dir to last group)
+		if (dir[num1-1]==0)
+		{
+			//path vector along base vector
+			dest->y[num2]=src->x[num1]*xbase+src->y[num1]*ybase;
+		}
+		else
+		{
+			//path vector perpendicular to base vector
+			dest->x[num2]=src->x[num1]*ybase-src->y[num1]*xbase;
+		}
+		num2++;//additional group for last node
+
 	}
 
 	//calculate nodes of new path by equations of two lines
@@ -342,10 +435,7 @@ RecalcOrtho:
 		dest->y[i]=y1;
 	}
 	
-	//last node repeat first for closed path
-	dest->x[num2]=dest->x[0];
-	dest->y[num2]=dest->y[0];
-	dest->num = num2+1;
+	dest->num = num2;
 
 	//check length of vector for collapsing, forget is 200 attempts made
 	if (collapseLen>0 && collapses<200)
@@ -368,16 +458,25 @@ RecalcOrtho:
 
 				istart=dirgroup[i-1];//start of dir-group, which makes this vector
 
-				//end of dir-group, could be cycled
 				if (i==(dest->num-1))
-					iend=dirgroup[0]+num1;
+				{
+					if (closed==1)
+						iend=dirgroup[0]+num1;//end of dir-group, could be cycled
+					else
+						iend=num-1;
+				}
 				else
 					iend=dirgroup[i];
 
 				//get dirprev from previous group for erasing this group
 				//simple reversing 1<->0 is not good, as two or more sequental vectors should be collapsed as a whole
 				if (istart==0)
-					dirprev=dir[num1-1];//cycled
+				{
+					if (closed==1)
+						dirprev=dir[num1-1];//cycled
+					else
+						dirprev=1-dir[0];//no previous group, only way is to do reverse
+				}
 				else
 					dirprev=dir[istart-1];
 				
@@ -396,6 +495,13 @@ RecalcOrtho:
 			goto RecalcOrtho;//anything changed - goto calc of C-params
 		}
 	}
+
+	if (closed==1 && dest->num < 5)
+	{
+		//Closed path with 1..4 nodes could be only collapsed, do not output
+		dest->num = 0;
+	}
+
 
 	//done, free arrays
 	delete dir;
